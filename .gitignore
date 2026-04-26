@@ -39,6 +39,7 @@ desktop.ini
 
 # Template files (if any)
 templates/
+test-pack/
 
 # .int
 .int/
