@@ -27,11 +27,11 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "auth":
 		return runAuth(args[1:], stdout, stderr)
 	case "scan":
-		return runUnimplemented("scan", stderr)
+		return runFileCommand("scan", args[1:], stderr)
 	case "upload":
-		return runUnimplemented("upload", stderr)
+		return runFileCommand("upload", args[1:], stderr)
 	case "ids":
-		return runUnimplemented("ids", stderr)
+		return runFileCommand("ids", args[1:], stderr)
 	case "lock":
 		return runLock(args[1:], stdout, stderr)
 	default:
@@ -75,12 +75,20 @@ func runLock(args []string, stdout io.Writer, stderr io.Writer) int {
 		printLockHelp(stdout)
 		return 0
 	case "clean":
-		return runUnimplemented("lock clean", stderr)
+		return runFileCommand("lock clean", args[1:], stderr)
 	default:
 		fmt.Fprintf(stderr, "Unknown lock command: %s\n\n", args[0])
 		printLockHelp(stderr)
 		return 2
 	}
+}
+
+func runFileCommand(command string, args []string, stderr io.Writer) int {
+	if _, code := parseFileCommandOptions(command, args, stderr); code >= 0 {
+		return code
+	}
+
+	return runUnimplemented(command, stderr)
 }
 
 func runUnimplemented(command string, stderr io.Writer) int {
