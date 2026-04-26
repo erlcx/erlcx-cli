@@ -1,8 +1,11 @@
 package lockfile
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 )
@@ -41,6 +44,82 @@ func New(creator Creator) LockFile {
 		Creator: creator,
 		Files:   map[string]Entry{},
 	}
+}
+
+func Load(path string) (LockFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return LockFile{}, err
+	}
+
+	var lock LockFile
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return LockFile{}, fmt.Errorf("read lock file %s: %w", path, err)
+	}
+
+	if err := Validate(lock); err != nil {
+		return LockFile{}, fmt.Errorf("read lock file %s: %w", path, err)
+	}
+
+	return lock, nil
+}
+
+func LoadOrNew(path string, creator Creator) (LockFile, error) {
+	lock, err := Load(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return New(creator), nil
+	}
+	return lock, err
+}
+
+func Save(path string, lock LockFile) error {
+	if err := Validate(lock); err != nil {
+		return fmt.Errorf("write lock file %s: %w", path, err)
+	}
+
+	data, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		return fmt.Errorf("write lock file %s: %w", path, err)
+	}
+	data = append(data, '\n')
+
+	dir := filepath.Dir(path)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("write lock file %s: %w", path, err)
+		}
+	}
+
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("write lock file %s: %w", path, err)
+	}
+	tmpPath := tmp.Name()
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write lock file %s: %w", path, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write lock file %s: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("write lock file %s: %w", path, err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("write lock file %s: %w", path, err)
+	}
+	removeTemp = false
+
+	return nil
 }
 
 func Validate(lock LockFile) error {

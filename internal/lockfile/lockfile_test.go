@@ -1,6 +1,9 @@
 package lockfile
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -202,6 +205,126 @@ func TestEntryMatchesContent(t *testing.T) {
 	}
 }
 
+func TestLoadReadsAndValidatesLockFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".erlcx-upload.lock.json")
+	lock := validLockFile()
+	writeJSON(t, path, lock)
+
+	loaded, err := Load(path)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if loaded.Creator.ID != lock.Creator.ID {
+		t.Fatalf("expected creator ID %q, got %q", lock.Creator.ID, loaded.Creator.ID)
+	}
+	if len(loaded.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(loaded.Files))
+	}
+}
+
+func TestLoadRejectsMalformedJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".erlcx-upload.lock.json")
+	writeText(t, path, `{`)
+
+	_, err := Load(path)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read lock file") {
+		t.Fatalf("expected contextual error, got %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidLockFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".erlcx-upload.lock.json")
+	lock := validLockFile()
+	lock.Files["Left.png"] = Entry{}
+	writeJSON(t, path, lock)
+
+	_, err := Load(path)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Left.png") {
+		t.Fatalf("expected invalid file context, got %v", err)
+	}
+}
+
+func TestLoadOrNewReturnsNewLockWhenMissing(t *testing.T) {
+	creator := Creator{
+		Type: CreatorTypeUser,
+		ID:   "123456",
+	}
+
+	lock, err := LoadOrNew(filepath.Join(t.TempDir(), ".erlcx-upload.lock.json"), creator)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if lock.Version != CurrentVersion {
+		t.Fatalf("expected current version, got %d", lock.Version)
+	}
+	if lock.Creator != creator {
+		t.Fatalf("expected creator %#v, got %#v", creator, lock.Creator)
+	}
+}
+
+func TestSaveWritesPrettyJSONAtomically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", ".erlcx-upload.lock.json")
+	lock := validLockFile()
+
+	if err := Save(path, lock); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved lock: %v", err)
+	}
+	if !strings.HasSuffix(string(data), "\n") {
+		t.Fatalf("expected trailing newline, got %q", string(data))
+	}
+	if !strings.Contains(string(data), "\n  \"version\"") {
+		t.Fatalf("expected indented JSON, got %q", string(data))
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("load saved lock: %v", err)
+	}
+	if loaded.Creator.ID != lock.Creator.ID {
+		t.Fatalf("expected creator ID %q, got %q", lock.Creator.ID, loaded.Creator.ID)
+	}
+}
+
+func TestSaveRejectsInvalidLockFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".erlcx-upload.lock.json")
+
+	err := Save(path, LockFile{})
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "write lock file") {
+		t.Fatalf("expected contextual error, got %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no lock file to be written, stat error was %v", statErr)
+	}
+}
+
+func validLockFile() LockFile {
+	lock := New(Creator{
+		Type: CreatorTypeUser,
+		ID:   "123456",
+	})
+	lock.Files["Law Enforcement/Falcon Stallion 350 2015/Left.png"] = validEntry()
+	return lock
+}
+
 func validEntry() Entry {
 	return Entry{
 		SHA256:      validSHA256,
@@ -216,4 +339,22 @@ func withValidEntry(edit func(*Entry)) Entry {
 	entry := validEntry()
 	edit(&entry)
 	return entry
+}
+
+func writeJSON(t *testing.T, path string, value any) {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal test JSON: %v", err)
+	}
+	writeText(t, path, string(data))
+}
+
+func writeText(t *testing.T, path string, content string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
 }
