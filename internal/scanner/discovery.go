@@ -64,7 +64,7 @@ func DiscoverImages(root string) ([]ImageFile, error) {
 			return err
 		}
 
-		relPath, err := filepath.Rel(absRoot, path)
+		relPath, err := NormalizeRelativePath(absRoot, path)
 		if err != nil {
 			return err
 		}

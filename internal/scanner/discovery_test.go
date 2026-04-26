@@ -22,9 +22,9 @@ func TestDiscoverImagesFindsSupportedImagesRecursively(t *testing.T) {
 
 	got := relPaths(images)
 	want := []string{
-		filepath.Join("Vehicle A", "Left.PNG"),
-		filepath.Join("Vehicle B", "Front.webp"),
-		filepath.Join("Vehicle B", "nested", "Rear.JpEg"),
+		"Vehicle A/Left.PNG",
+		"Vehicle B/Front.webp",
+		"Vehicle B/nested/Rear.JpEg",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected paths %#v, got %#v", want, got)
