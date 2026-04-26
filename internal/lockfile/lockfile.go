@@ -182,6 +182,10 @@ func (entry Entry) MatchesContent(sha256 string, assetType string) bool {
 	return entry.SHA256 == sha256 && entry.AssetType == assetType && entry.AssetID != ""
 }
 
+func (lock LockFile) CreatorMatches(creator Creator) bool {
+	return lock.Creator.Type == creator.Type && lock.Creator.ID == creator.ID
+}
+
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func isSHA256(value string) bool {
