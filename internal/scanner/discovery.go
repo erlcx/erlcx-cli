@@ -25,6 +25,7 @@ type ImageFile struct {
 	Name    string
 	Ext     string
 	Size    int64
+	SHA256  string
 }
 
 func DiscoverImages(root string) ([]ImageFile, error) {
