@@ -13,6 +13,7 @@ build/
 vendor/
 go.work
 go.work.sum
+.gocache/
 
 # ERLCX generated files
 .erlcx-upload.lock.json

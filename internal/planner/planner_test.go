@@ -65,6 +65,45 @@ func TestBuildScanPlanClassifiesImages(t *testing.T) {
 	assertClass(t, plan, "Vehicle/skip_raw.png", ClassConfiguredSkip)
 }
 
+func TestBuildScanPlanDerivesNamesFromRelativePath(t *testing.T) {
+	packDir := t.TempDir()
+	writeBytes(t, filepath.Join(packDir, "Law Enforcement", "Coupe - Sedan", "Falcon Stallion 350 2015", "Left.png"), []byte("image"))
+
+	plan, err := BuildScanPlan(packDir, config.Defaults(), nil)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(plan.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(plan.Items))
+	}
+
+	item := plan.Items[0]
+	if item.VehiclePath != "Law Enforcement/Coupe - Sedan/Falcon Stallion 350 2015" {
+		t.Fatalf("expected vehicle path to be derived, got %q", item.VehiclePath)
+	}
+	if item.VehicleName != "Falcon Stallion 350 2015" {
+		t.Fatalf("expected vehicle name to be derived, got %q", item.VehicleName)
+	}
+	if item.ImageName != "Left" {
+		t.Fatalf("expected image name to be derived, got %q", item.ImageName)
+	}
+	if item.DisplayName != "Falcon Stallion 350 2015 - Left" {
+		t.Fatalf("expected display name to be derived, got %q", item.DisplayName)
+	}
+}
+
+func TestBuildScanPlanRejectsImageWithoutVehicleFolder(t *testing.T) {
+	packDir := t.TempDir()
+	writeBytes(t, filepath.Join(packDir, "Left.png"), []byte("image"))
+
+	_, err := BuildScanPlan(packDir, config.Defaults(), nil)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
 func TestBuildScanPlanConfiguredSkipWinsOverTemplateMatch(t *testing.T) {
 	packDir := t.TempDir()
 	templatesDir := filepath.Join(packDir, "templates")
