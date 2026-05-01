@@ -1,0 +1,178 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v1.2.3"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-nightly-')
+    name: Build windows-${{ matrix.goarch }}
+    runs-on: windows-latest
+    env:
+      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch:
+          - amd64
+          - arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build and package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "${{ matrix.goarch }}"
+          $version = if ($env:TARGET_TAG) { $env:TARGET_TAG } else { "dev" }
+          $ldflags = "-s -w -X github.com/erlcx/cli/internal/cli.version=$version"
+
+          go build -trimpath -ldflags $ldflags -o dist/erlcx.exe ./cmd/erlcx
+
+          $assetName = "erlcx-windows-${{ matrix.goarch }}.zip"
+          Compress-Archive -Path dist/erlcx.exe -DestinationPath $assetName -Force
+          "ASSET_NAME=$assetName" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-${{ matrix.goarch }}
+          path: ${{ env.ASSET_NAME }}
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Generate checksums.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum * > checksums.txt
+
+      - name: Generate commit summary
+        id: commit_notes
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          result-encoding: string
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const targetTag = process.env.TARGET_TAG;
+
+            if (!targetTag) {
+              return "### Commit Summary\n\n- Could not determine target tag.";
+            }
+
+            const tags = await github.paginate(github.rest.repos.listTags, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+
+            const isNightly = targetTag.includes("-nightly-");
+            const nightlyPattern = /^v\d+\.\d+\.\d+-nightly-\d{4}-\d{2}-\d{2}$/;
+            const stablePattern = /^v\d+\.\d+\.\d+$/;
+            const matchingTags = tags.filter((tag) => {
+              if (isNightly) {
+                return nightlyPattern.test(tag.name);
+              }
+              return stablePattern.test(tag.name);
+            });
+            const targetIndex = matchingTags.findIndex((tag) => tag.name === targetTag);
+            const previousTag = targetIndex >= 0 && targetIndex + 1 < matchingTags.length
+              ? matchingTags[targetIndex + 1].name
+              : null;
+
+            let commits = [];
+            if (previousTag) {
+              const compare = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${previousTag}...${targetTag}`,
+              });
+              commits = compare.data.commits || [];
+            } else {
+              const list = await github.rest.repos.listCommits({
+                owner,
+                repo,
+                sha: targetTag,
+                per_page: 30,
+              });
+              commits = list.data || [];
+            }
+
+            const maxCommits = 50;
+            const shown = commits.slice(-maxCommits);
+            const header = previousTag
+              ? `### Commit Summary (${previousTag}...${targetTag})`
+              : `### Commit Summary (${targetTag})`;
+
+            const lines = shown.map((commit) => {
+              const sha = commit.sha.slice(0, 7);
+              const subject = (commit.commit.message || "").split("\n")[0];
+              const author = commit.author && commit.author.login ? ` @${commit.author.login}` : "";
+              return `- \`${sha}\` ${subject}${author}`;
+            });
+
+            if (lines.length === 0) {
+              lines.push("- No commits found.");
+            }
+
+            if (commits.length > maxCommits) {
+              lines.push(`- ...and ${commits.length - maxCommits} more commit(s).`);
+            }
+
+            return `${header}\n\n${lines.join("\n")}`;
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TARGET_TAG }}
+          name: ${{ env.TARGET_TAG }}
+          prerelease: ${{ contains(env.TARGET_TAG, '-nightly-') }}
+          generate_release_notes: true
+          append_body: true
+          body: ${{ steps.commit_notes.outputs.result }}
+          files: |
+            release-assets/*

@@ -6,10 +6,9 @@ import (
 	"strings"
 )
 
-const (
-	appName = "erlcx"
-	version = "0.1.0-dev"
-)
+const appName = "erlcx"
+
+var version = "0.1.0-dev"
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err := loadDotEnv(".env"); err != nil {

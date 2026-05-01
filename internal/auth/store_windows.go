@@ -74,12 +74,12 @@ func (store WindowsCredentialStore) Load() (StoredCredential, error) {
 		return StoredCredential{}, err
 	}
 
-	var nativePtr uintptr
+	var native *nativeCredential
 	ret, _, callErr := procCredRead.Call(
 		uintptr(unsafe.Pointer(target)),
 		uintptr(credTypeGeneric),
 		0,
-		uintptr(unsafe.Pointer(&nativePtr)),
+		uintptr(unsafe.Pointer(&native)),
 	)
 	if ret == 0 {
 		if errors.Is(callErr, syscall.ERROR_NOT_FOUND) {
@@ -87,9 +87,8 @@ func (store WindowsCredentialStore) Load() (StoredCredential, error) {
 		}
 		return StoredCredential{}, fmt.Errorf("read Windows credential: %w", callErr)
 	}
-	defer procCredFree.Call(nativePtr)
+	defer procCredFree.Call(uintptr(unsafe.Pointer(native)))
 
-	native := (*nativeCredential)(unsafe.Pointer(nativePtr))
 	data := unsafe.Slice(native.CredentialBlob, native.CredentialBlobSize)
 	return decodeCredential(data)
 }
