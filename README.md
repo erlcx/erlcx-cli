@@ -22,48 +22,7 @@ More ERLCX marketplace features may be added to this CLI later.
 - It does not delete Roblox assets.
 - It does not edit your images.
 
-## Folder Layout
-
-Put your finished livery images inside vehicle folders.
-
-Example:
-
-```txt
-Sheriff Pack/
-  Law Enforcement/
-    Coupe - Sedan/
-      Falcon Stallion 350 2015/
-        Front.png
-        Back.png
-        Left.png
-        Right.png
-        Top.png
-      Bullhorn Prancer Pursuit 2015/
-        Front1.png
-        Back1.png
-        Left1.png
-        Right1.png
-        Top1.png
-```
-
-The vehicle name comes from the folder that contains the images.
-
 ## First Time Setup
-
-Create a Roblox OAuth 2.0 app in Creator Dashboard and add this redirect URL:
-
-```txt
-http://localhost:53682/callback
-```
-
-Set your app credentials as environment variables. Do not pass these values as normal command flags.
-
-```powershell
-$env:ERLCX_ROBLOX_CLIENT_ID = "your-client-id"
-$env:ERLCX_ROBLOX_CLIENT_SECRET = "your-client-secret"
-$env:ERLCX_ROBLOX_REDIRECT_URI = "http://localhost:53682/callback"
-$env:ERLCX_ROBLOX_SCOPES = "openid profile asset:read asset:write"
-```
 
 Log in with Roblox:
 
@@ -195,8 +154,33 @@ Example:
   "skipNamePatterns": [
     "*_raw.png",
     "*_reference.png"
-  ]
+  ],
+  "concurrency": 4,
+  "creator": {
+    "type": "user"
+  }
 }
+```
+
+Supported config fields:
+
+- `templatesDir`: folder containing raw templates to hash-match and skip.
+- `outputFile`: generated IDs file path. Defaults to `IDs.txt`.
+- `lockFile`: upload lock path. Defaults to `.erlcx-upload.lock.json`.
+- `skipNamePatterns`: opt-in filename patterns to skip.
+- `concurrency`: number of parallel uploads. Defaults to `4`.
+- `assetType`: Roblox asset type. Defaults to `Image`.
+- `creator`: use `{"type":"user"}` or `{"type":"group","groupId":123456}`.
+
+Command-line flags override config values for that run.
+
+Useful upload flags:
+
+```powershell
+erlcx upload "D:\Designs\Sheriff Pack" --output "CustomIDs.txt"
+erlcx upload "D:\Designs\Sheriff Pack" --lock-file ".erlcx-upload.lock.json"
+erlcx upload "D:\Designs\Sheriff Pack" --skip-name "*_raw.png"
+erlcx upload "D:\Designs\Sheriff Pack" --concurrency 2
 ```
 
 ## License

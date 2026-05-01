@@ -294,6 +294,51 @@ func TestRunUploadUploadsAndWritesLockAndIDs(t *testing.T) {
 	}
 }
 
+func TestRunUploadReportsFakeServerPollingFailure(t *testing.T) {
+	store := &cliMemoryStore{
+		credential: auth.StoredCredential{
+			ClientID:     "client",
+			RefreshToken: "refresh",
+			UserID:       "123",
+			Username:     "tester",
+		},
+		hasValue: true,
+	}
+	oauthServer := cliOAuthServer(t)
+	defer oauthServer.Close()
+	uploadServer := cliFailingUploadServer(t)
+	defer uploadServer.Close()
+
+	withAuthService(t, auth.Service{
+		Store: store,
+		OAuth: auth.OAuthClient{BaseURL: oauthServer.URL},
+	})
+	withUploaderClient(t, uploader.Client{BaseURL: uploadServer.URL})
+
+	packDir := t.TempDir()
+	writeFile(t, filepath.Join(packDir, "Vehicle", "Left.png"), "image")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"upload", packDir, "--fail-fast=false"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d and output %q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "moderation failed") {
+		t.Fatalf("expected polling failure message, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "upload completed with failures") {
+		t.Fatalf("expected non-fail-fast summary, got %q", stderr.String())
+	}
+
+	lock := readLockFile(t, filepath.Join(packDir, ".erlcx-upload.lock.json"))
+	if len(lock.Files) != 0 {
+		t.Fatalf("expected failed upload not to be recorded, got %#v", lock.Files)
+	}
+}
+
 func TestRunIDsRegeneratesIDsFromLockFile(t *testing.T) {
 	packDir := t.TempDir()
 	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeUser, ID: "123"})
@@ -601,6 +646,31 @@ func cliUploadServer(t *testing.T) *httptest.Server {
 				Response: &uploader.Asset{
 					AssetID: "2205400862",
 				},
+			})
+		default:
+			t.Fatalf("unexpected upload request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+}
+
+func cliFailingUploadServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/assets/v1/assets":
+			if r.Header.Get("Authorization") != "Bearer access" {
+				t.Fatalf("expected bearer access token, got %q", r.Header.Get("Authorization"))
+			}
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
+				t.Fatalf("parse upload multipart: %v", err)
+			}
+			writeJSONResponse(t, w, uploader.Operation{Path: "operations/op-1", OperationID: "op-1"})
+		case r.Method == http.MethodGet && r.URL.Path == "/assets/v1/operations/op-1":
+			writeJSONResponse(t, w, uploader.Operation{
+				Path:   "operations/op-1",
+				Done:   true,
+				Status: &uploader.OperationStatus{Message: "moderation failed"},
 			})
 		default:
 			t.Fatalf("unexpected upload request %s %s", r.Method, r.URL.Path)
