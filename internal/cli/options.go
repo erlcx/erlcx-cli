@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/erlcx/cli/internal/config"
@@ -14,6 +15,7 @@ type fileCommandOptions struct {
 	Config   config.Config
 	DryRun   bool
 	FailFast bool
+	Verbose  bool
 }
 
 func parseFileCommandOptions(command string, args []string, stderr io.Writer) (fileCommandOptions, int) {
@@ -28,9 +30,11 @@ func parseFileCommandOptions(command string, args []string, stderr io.Writer) (f
 	var concurrency int
 	var dryRun bool
 	failFast := true
+	var verbose bool
 	var showHelp bool
 
 	flags.BoolVar(&showHelp, "help", false, "show help")
+	flags.BoolVar(&verbose, "verbose", false, "show per-file details for every scanned image")
 	flags.StringVar(&templatesDir, "templates", "", "templates directory")
 	flags.StringVar(&outputFile, "output", "", "output IDs file")
 	flags.StringVar(&lockFile, "lock-file", "", "upload lock file")
@@ -68,13 +72,13 @@ func parseFileCommandOptions(command string, args []string, stderr io.Writer) (f
 	}
 
 	if templatesDir != "" {
-		cfg.TemplatesDir = templatesDir
+		cfg.TemplatesDir = resolveCLIPath(templatesDir)
 	}
 	if outputFile != "" {
-		cfg.OutputFile = outputFile
+		cfg.OutputFile = resolveCLIPath(outputFile)
 	}
 	if lockFile != "" {
-		cfg.LockFile = lockFile
+		cfg.LockFile = resolveCLIPath(lockFile)
 	}
 	if creatorType != "" {
 		cfg.Creator.Type = creatorType
@@ -99,7 +103,19 @@ func parseFileCommandOptions(command string, args []string, stderr io.Writer) (f
 		Config:   cfg,
 		DryRun:   dryRun,
 		FailFast: failFast,
+		Verbose:  verbose,
 	}, -1
+}
+
+func resolveCLIPath(path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return absPath
 }
 
 func splitPackDirAndFlags(args []string) (string, []string, error) {
@@ -148,6 +164,7 @@ func printFileCommandHelp(command string, w io.Writer) {
   erlcx %s <pack-dir> [options]
 
 Options:
+  --verbose               Show per-file details for every scanned image
   --templates <dir>       Templates directory
   --output <file>         Output IDs file
   --lock-file <file>      Upload lock file

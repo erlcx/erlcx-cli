@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/erlcx/cli/internal/auth"
 	"github.com/erlcx/cli/internal/lockfile"
@@ -143,6 +144,7 @@ func TestRunAuthLoginLoadsClientIDFromDotEnv(t *testing.T) {
 		OpenBrowser: func(string) error {
 			return nil
 		},
+		CallbackTimeout: time.Millisecond,
 	}
 	withAuthService(t, service)
 
@@ -156,23 +158,6 @@ func TestRunAuthLoginLoadsClientIDFromDotEnv(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "client ID") {
 		t.Fatalf("expected .env client ID to be loaded, got %q", stderr.String())
-	}
-}
-
-func TestRunRoutesTopLevelCommands(t *testing.T) {
-	for _, command := range []string{"ids"} {
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		packDir := t.TempDir()
-
-		code := Run([]string{command, packDir}, &stdout, &stderr)
-
-		if code != 1 {
-			t.Fatalf("expected exit code 1 for %s, got %d", command, code)
-		}
-		if !strings.Contains(stderr.String(), command+" is not implemented yet.") {
-			t.Fatalf("expected routed unimplemented error for %s, got %q", command, stderr.String())
-		}
 	}
 }
 
@@ -192,8 +177,42 @@ func TestRunScanPrintsCountsAndReasons(t *testing.T) {
 	if !strings.Contains(stderr.String(), "Scanned 1 images") {
 		t.Fatalf("expected scan count, got %q", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "upload  Vehicle/Left.png") {
+	if !strings.Contains(stderr.String(), "upload          Vehicle/Left.png") {
 		t.Fatalf("expected upload item, got %q", stderr.String())
+	}
+}
+
+func TestRunScanHidesTemplateDetailsUnlessVerbose(t *testing.T) {
+	withAuthService(t, auth.Service{Store: &cliMemoryStore{}})
+	packDir := t.TempDir()
+	templatesDir := t.TempDir()
+	writeFile(t, filepath.Join(packDir, "Vehicle", "Left.png"), "same")
+	writeFile(t, filepath.Join(templatesDir, "Left.png"), "same")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"scan", packDir, "--templates", templatesDir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d and output %q", code, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "matched template") {
+		t.Fatalf("expected template details to be hidden by default, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "1 unchanged/template/skip entries hidden") {
+		t.Fatalf("expected hidden summary, got %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"scan", packDir, "--templates", templatesDir, "--verbose"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d and output %q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "matched template") {
+		t.Fatalf("expected verbose template details, got %q", stderr.String())
 	}
 }
 
@@ -210,7 +229,7 @@ func TestRunUploadDryRunUsesScanPlannerWithoutWritingFiles(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d and output %q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "Dry run") {
+	if !strings.Contains(stderr.String(), "dry-run:") {
 		t.Fatalf("expected dry-run output, got %q", stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(packDir, ".erlcx-upload.lock.json")); !os.IsNotExist(err) {
@@ -272,18 +291,60 @@ func TestRunUploadUploadsAndWritesLockAndIDs(t *testing.T) {
 	}
 }
 
-func TestRunRoutesLockClean(t *testing.T) {
+func TestRunIDsRegeneratesIDsFromLockFile(t *testing.T) {
+	packDir := t.TempDir()
+	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeUser, ID: "123"})
+	lock.Files["Vehicle/Left.png"] = testLockEntry("2205400862")
+	if err := lockfile.Save(filepath.Join(packDir, ".erlcx-upload.lock.json"), lock); err != nil {
+		t.Fatalf("save lock file: %v", err)
+	}
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+
+	code := Run([]string{"ids", packDir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d and output %q", code, stderr.String())
+	}
+	data, err := os.ReadFile(filepath.Join(packDir, "IDs.txt"))
+	if err != nil {
+		t.Fatalf("read IDs file: %v", err)
+	}
+	if !strings.Contains(string(data), "Left: 2205400862") {
+		t.Fatalf("expected regenerated IDs file, got %q", string(data))
+	}
+}
+
+func TestRunRoutesLockClean(t *testing.T) {
 	packDir := t.TempDir()
+	writeFile(t, filepath.Join(packDir, "Vehicle", "Left.png"), "image")
+
+	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeUser, ID: "123"})
+	lock.Files["Vehicle/Left.png"] = testLockEntry("111")
+	lock.Files["Vehicle/Missing.png"] = testLockEntry("222")
+	if err := lockfile.Save(filepath.Join(packDir, ".erlcx-upload.lock.json"), lock); err != nil {
+		t.Fatalf("save lock file: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 
 	code := Run([]string{"lock", "clean", packDir}, &stdout, &stderr)
 
-	if code != 1 {
-		t.Fatalf("expected exit code 1, got %d", code)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "lock clean is not implemented yet.") {
-		t.Fatalf("expected lock clean routing, got %q", stderr.String())
+	if !strings.Contains(stderr.String(), "removed: 1 stale lock entries") {
+		t.Fatalf("expected clean summary, got %q", stderr.String())
+	}
+
+	cleaned := readLockFile(t, filepath.Join(packDir, ".erlcx-upload.lock.json"))
+	if _, ok := cleaned.Files["Vehicle/Left.png"]; !ok {
+		t.Fatalf("expected existing file to remain, got %#v", cleaned.Files)
+	}
+	if _, ok := cleaned.Files["Vehicle/Missing.png"]; ok {
+		t.Fatalf("expected missing file to be removed, got %#v", cleaned.Files)
 	}
 }
 
@@ -332,13 +393,13 @@ func TestParseFileCommandOptionsAppliesCLIOverConfig(t *testing.T) {
 	if opts.PackDir != packDir {
 		t.Fatalf("expected pack dir %q, got %q", packDir, opts.PackDir)
 	}
-	if opts.Config.TemplatesDir != "from-cli" {
+	if opts.Config.TemplatesDir != mustAbs(t, "from-cli") {
 		t.Fatalf("expected CLI templates dir, got %q", opts.Config.TemplatesDir)
 	}
-	if opts.Config.OutputFile != "cli-ids.txt" {
+	if opts.Config.OutputFile != mustAbs(t, "cli-ids.txt") {
 		t.Fatalf("expected CLI output file, got %q", opts.Config.OutputFile)
 	}
-	if opts.Config.LockFile != "cli-lock.json" {
+	if opts.Config.LockFile != mustAbs(t, "cli-lock.json") {
 		t.Fatalf("expected CLI lock file, got %q", opts.Config.LockFile)
 	}
 	if opts.Config.Creator.GroupID == nil || *opts.Config.Creator.GroupID != 222 {
@@ -349,6 +410,23 @@ func TestParseFileCommandOptionsAppliesCLIOverConfig(t *testing.T) {
 	}
 	if !opts.DryRun {
 		t.Fatal("expected dry run to be true")
+	}
+}
+
+func TestParseFileCommandOptionsResolvesCLITemplatesRelativeToWorkingDirectory(t *testing.T) {
+	packDir := t.TempDir()
+
+	var stderr bytes.Buffer
+	opts, code := parseFileCommandOptions("scan", []string{
+		packDir,
+		"--templates", "templates",
+	}, &stderr)
+
+	if code != -1 {
+		t.Fatalf("expected successful parse marker, got code %d and stderr %q", code, stderr.String())
+	}
+	if opts.Config.TemplatesDir != mustAbs(t, "templates") {
+		t.Fatalf("expected CLI templates path to resolve from working directory, got %q", opts.Config.TemplatesDir)
 	}
 }
 
@@ -392,9 +470,22 @@ func TestParseFileCommandOptionsRejectsInvalidFlagPrecedenceResult(t *testing.T)
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create parent dir for %s: %v", path, err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write file %s: %v", path, err)
 	}
+}
+
+func mustAbs(t *testing.T, path string) string {
+	t.Helper()
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("resolve abs path %s: %v", path, err)
+	}
+	return absPath
 }
 
 func TestRunReturnsErrorForUnknownSubcommands(t *testing.T) {
@@ -531,4 +622,14 @@ func readLockFile(t *testing.T, path string) lockfile.LockFile {
 		t.Fatalf("load lock file: %v", err)
 	}
 	return lock
+}
+
+func testLockEntry(assetID string) lockfile.Entry {
+	return lockfile.Entry{
+		SHA256:      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		AssetType:   lockfile.AssetTypeDecal,
+		AssetID:     assetID,
+		DisplayName: "Vehicle - Left",
+		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),
+	}
 }

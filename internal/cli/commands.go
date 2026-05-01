@@ -24,30 +24,36 @@ var newUploaderClient = func() uploader.Client {
 }
 
 func runScan(opts fileCommandOptions, output io.Writer) int {
+	style := newStyler(output)
+	start := time.Now()
+	printScanProgress(output, style, opts)
 	lock, err := loadOptionalLock(resolvePackPath(opts.PackDir, opts.Config.LockFile))
 	if err != nil {
-		fmt.Fprintf(output, "scan failed: %v\n", err)
+		style.errorf(output, "scan failed: %v", err)
 		return 1
 	}
 	targetCreator, err := resolveCreatorForScan(opts.Config, lock)
 	if err != nil {
-		fmt.Fprintf(output, "scan failed: %v\n", err)
+		style.errorf(output, "scan failed: %v", err)
 		return 1
 	}
 
 	plan, err := planner.BuildScanPlanForCreator(opts.PackDir, opts.Config, targetCreator, lock)
 	if err != nil {
-		fmt.Fprintf(output, "scan failed: %v\n", err)
+		style.errorf(output, "scan failed: %v", err)
 		return 1
 	}
 
-	printScanPlan(output, plan)
+	fmt.Fprintf(output, "%s scan completed in %s\n\n", style.green("done:"), time.Since(start).Round(time.Millisecond))
+	printScanPlan(output, plan, style, opts.Verbose)
 	return 0
 }
 
 func runUpload(opts fileCommandOptions, output io.Writer) int {
+	style := newStyler(output)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	start := time.Now()
 
 	var token auth.AccessToken
 	var targetCreator lockfile.Creator
@@ -63,7 +69,7 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 		var err error
 		targetCreator, err = resolveCreatorForScan(opts.Config, lock)
 		if err != nil {
-			fmt.Fprintf(output, "upload dry-run failed: %v\n", err)
+			style.errorf(output, "upload dry-run failed: %v", err)
 			return 1
 		}
 	}
@@ -75,9 +81,9 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 		})
 		if err != nil {
 			if errors.Is(err, auth.ErrNotLoggedIn) {
-				fmt.Fprintln(output, "upload failed: not logged in; run erlcx auth login")
+				style.errorf(output, "upload failed: not logged in; run erlcx auth login")
 			} else {
-				fmt.Fprintf(output, "upload failed: %v\n", err)
+				style.errorf(output, "upload failed: %v", err)
 			}
 			return 1
 		}
@@ -93,7 +99,7 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 	if opts.DryRun {
 		existingLock, err = loadOptionalLock(lockPath)
 		if err != nil {
-			fmt.Fprintf(output, "upload failed: %v\n", err)
+			style.errorf(output, "upload failed: %v", err)
 			return 1
 		}
 		if existingLock != nil {
@@ -106,35 +112,38 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 		lock, err = lockfile.LoadOrNew(lockPath, targetCreator)
 	}
 	if err != nil && !opts.DryRun {
-		fmt.Fprintf(output, "upload failed: %v\n", err)
+		style.errorf(output, "upload failed: %v", err)
 		return 1
 	}
 	if !opts.DryRun && !lock.CreatorMatches(targetCreator) {
 		lock = lockfile.New(targetCreator)
 	}
 
+	printScanProgress(output, style, opts)
 	if !opts.DryRun {
 		existingLock = &lock
 	}
 	plan, err := planner.BuildScanPlanForCreator(opts.PackDir, opts.Config, targetCreator, existingLock)
 	if err != nil {
-		fmt.Fprintf(output, "upload failed: %v\n", err)
+		style.errorf(output, "upload failed: %v", err)
 		return 1
 	}
 
 	if opts.DryRun {
-		fmt.Fprintln(output, "Dry run. No files will be uploaded.")
-		printScanPlan(output, plan)
+		fmt.Fprintf(output, "%s No files will be uploaded.\n\n", style.yellow("dry-run:"))
+		fmt.Fprintf(output, "%s scan completed in %s\n\n", style.green("done:"), time.Since(start).Round(time.Millisecond))
+		printScanPlan(output, plan, style, opts.Verbose)
 		return 0
 	}
 
-	printScanPlan(output, plan)
+	fmt.Fprintf(output, "%s scan completed in %s\n\n", style.green("done:"), time.Since(start).Round(time.Millisecond))
+	printScanPlan(output, plan, style, opts.Verbose)
 	if plan.Counts.Upload == 0 {
 		if err := writeIDsFile(resolvePackPath(opts.PackDir, opts.Config.OutputFile), lock); err != nil {
-			fmt.Fprintf(output, "upload failed: %v\n", err)
+			style.errorf(output, "upload failed: %v", err)
 			return 1
 		}
-		fmt.Fprintln(output, "No uploads needed.")
+		fmt.Fprintf(output, "%s No uploads needed.\n", style.green("ok:"))
 		return 0
 	}
 
@@ -154,7 +163,7 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 			continue
 		}
 		if result.Err != nil {
-			fmt.Fprintf(output, "Failed %s: %v\n", result.Job.Request.DisplayName, result.Err)
+			fmt.Fprintf(output, "%s %s  %v\n", style.red("x failed"), result.Job.Request.DisplayName, result.Err)
 			continue
 		}
 		item := plan.Items[result.Job.Index]
@@ -165,36 +174,143 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 			DisplayName: item.DisplayName,
 			UploadedAt:  now,
 		}
-		fmt.Fprintf(output, "Uploaded %s: %s\n", item.DisplayName, result.Asset.AssetID)
+		fmt.Fprintf(output, "%s %s  %s\n", style.green("+ uploaded"), item.DisplayName, style.cyan(result.Asset.AssetID))
 	}
 
-	if uploadErr != nil {
-		fmt.Fprintf(output, "upload failed: %v\n", uploadErr)
+	finalExitCode := 0
+	if uploadErr != nil && opts.FailFast {
+		style.errorf(output, "upload failed: %v", uploadErr)
 		return 1
 	}
+	if uploadErr != nil {
+		fmt.Fprintf(output, "%s upload completed with failures: %v\n", style.yellow("warning:"), uploadErr)
+		finalExitCode = 1
+	}
 	if err := lockfile.Save(lockPath, lock); err != nil {
-		fmt.Fprintf(output, "upload failed: %v\n", err)
+		style.errorf(output, "upload failed: %v", err)
 		return 1
 	}
 	if err := writeIDsFile(resolvePackPath(opts.PackDir, opts.Config.OutputFile), lock); err != nil {
-		fmt.Fprintf(output, "upload failed: %v\n", err)
+		style.errorf(output, "upload failed: %v", err)
 		return 1
 	}
 
-	fmt.Fprintf(output, "Updated %s\n", lockPath)
-	fmt.Fprintf(output, "Updated %s\n", resolvePackPath(opts.PackDir, opts.Config.OutputFile))
+	fmt.Fprintf(output, "%s %s\n", style.green("updated:"), lockPath)
+	fmt.Fprintf(output, "%s %s\n", style.green("updated:"), resolvePackPath(opts.PackDir, opts.Config.OutputFile))
+	return finalExitCode
+}
+
+func runIDs(opts fileCommandOptions, output io.Writer) int {
+	style := newStyler(output)
+	lockPath := resolvePackPath(opts.PackDir, opts.Config.LockFile)
+	lock, err := lockfile.Load(lockPath)
+	if err != nil {
+		style.errorf(output, "ids failed: %v", err)
+		return 1
+	}
+
+	outputPath := resolvePackPath(opts.PackDir, opts.Config.OutputFile)
+	if err := writeIDsFile(outputPath, lock); err != nil {
+		style.errorf(output, "ids failed: %v", err)
+		return 1
+	}
+
+	fmt.Fprintf(output, "%s %s\n", style.green("updated:"), outputPath)
 	return 0
 }
 
-func printScanPlan(output io.Writer, plan planner.Plan) {
-	fmt.Fprintf(output, "Scanned %d images\n", plan.Counts.Total)
-	fmt.Fprintf(output, "Upload candidates: %d\n", plan.Counts.Upload)
-	fmt.Fprintf(output, "Unchanged: %d\n", plan.Counts.Unchanged)
-	fmt.Fprintf(output, "Template matches: %d\n", plan.Counts.TemplateMatch)
-	fmt.Fprintf(output, "Configured skips: %d\n", plan.Counts.ConfiguredSkip)
+func runLockClean(opts fileCommandOptions, output io.Writer) int {
+	style := newStyler(output)
+	lockPath := resolvePackPath(opts.PackDir, opts.Config.LockFile)
+	lock, err := lockfile.Load(lockPath)
+	if err != nil {
+		style.errorf(output, "lock clean failed: %v", err)
+		return 1
+	}
 
+	removed := 0
+	for relPath := range lock.Files {
+		if _, err := os.Stat(resolvePackPath(opts.PackDir, relPath)); errors.Is(err, os.ErrNotExist) {
+			delete(lock.Files, relPath)
+			removed++
+		} else if err != nil {
+			style.errorf(output, "lock clean failed: check %s: %v", relPath, err)
+			return 1
+		}
+	}
+
+	if err := lockfile.Save(lockPath, lock); err != nil {
+		style.errorf(output, "lock clean failed: %v", err)
+		return 1
+	}
+
+	fmt.Fprintf(output, "%s %d stale lock entries\n", style.yellow("removed:"), removed)
+	fmt.Fprintf(output, "%s %s\n", style.green("updated:"), lockPath)
+	return 0
+}
+
+func printScanProgress(output io.Writer, style styler, opts fileCommandOptions) {
+	fmt.Fprintf(output, "%s scanning pack %s\n", style.cyan("scan:"), opts.PackDir)
+	if opts.Config.TemplatesDir != "" {
+		fmt.Fprintf(output, "%s indexing templates %s\n", style.cyan("scan:"), opts.Config.TemplatesDir)
+	}
+	fmt.Fprintf(output, "%s hashing images; this can take a moment for large packs\n", style.dim("scan:"))
+}
+
+func printScanPlan(output io.Writer, plan planner.Plan, style styler, verbose bool) {
+	fmt.Fprintf(output, "%s %d images\n", style.bold("Scanned"), plan.Counts.Total)
+	fmt.Fprintf(output, "  %s %-18s %d\n", style.green("+"), "upload candidates", plan.Counts.Upload)
+	fmt.Fprintf(output, "  %s %-18s %d\n", style.dim("="), "unchanged", plan.Counts.Unchanged)
+	fmt.Fprintf(output, "  %s %-18s %d\n", style.yellow("~"), "template matches", plan.Counts.TemplateMatch)
+	fmt.Fprintf(output, "  %s %-18s %d\n", style.blue("-"), "configured skips", plan.Counts.ConfiguredSkip)
+
+	items, hidden := visiblePlanItems(plan, verbose)
+	if len(items) == 0 {
+		if hidden > 0 {
+			fmt.Fprintf(output, "\n  %s %d unchanged/template/skip entries hidden; use --verbose to show all\n", style.dim("..."), hidden)
+		}
+		return
+	}
+	fmt.Fprintln(output)
+	for _, item := range items {
+		marker, class := styledClass(style, item.Class)
+		fmt.Fprintf(output, "  %s %-15s %s\n", marker, class, item.Image.RelPath)
+		fmt.Fprintf(output, "      %s\n", style.dim(item.Reason))
+	}
+	if hidden > 0 {
+		fmt.Fprintf(output, "\n  %s %d unchanged/template/skip entries hidden; use --verbose to show all\n", style.dim("..."), hidden)
+	}
+}
+
+func visiblePlanItems(plan planner.Plan, verbose bool) ([]planner.Item, int) {
+	if verbose {
+		return plan.Items, 0
+	}
+
+	visible := make([]planner.Item, 0, len(plan.Items))
+	hidden := 0
 	for _, item := range plan.Items {
-		fmt.Fprintf(output, "%s  %s  %s\n", item.Class, item.Image.RelPath, item.Reason)
+		if item.Class == planner.ClassUpload {
+			visible = append(visible, item)
+		} else {
+			hidden++
+		}
+	}
+	return visible, hidden
+}
+
+func styledClass(style styler, class planner.Classification) (string, string) {
+	switch class {
+	case planner.ClassUpload:
+		return style.green("+"), style.green(string(class))
+	case planner.ClassUnchanged:
+		return style.dim("="), style.dim(string(class))
+	case planner.ClassTemplateMatch:
+		return style.yellow("~"), style.yellow(string(class))
+	case planner.ClassConfiguredSkip:
+		return style.blue("-"), style.blue(string(class))
+	default:
+		return "?", string(class)
 	}
 }
 

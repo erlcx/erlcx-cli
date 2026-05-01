@@ -99,6 +99,10 @@ func runFileCommand(command string, args []string, stderr io.Writer) int {
 		return runScan(opts, stderr)
 	case "upload":
 		return runUpload(opts, stderr)
+	case "ids":
+		return runIDs(opts, stderr)
+	case "lock clean":
+		return runLockClean(opts, stderr)
 	default:
 		return runUnimplemented(command, stderr)
 	}
