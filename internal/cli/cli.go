@@ -12,6 +12,11 @@ const (
 )
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
+	if err := loadDotEnv(".env"); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+
 	if len(args) == 0 {
 		printHelp(stdout)
 		return 0
@@ -52,11 +57,11 @@ func runAuth(args []string, stdout io.Writer, stderr io.Writer) int {
 		printAuthHelp(stdout)
 		return 0
 	case "login":
-		return runUnimplemented("auth login", stderr)
+		return runAuthLogin(args[1:], stdout, stderr)
 	case "status":
-		return runUnimplemented("auth status", stderr)
+		return runAuthStatus(args[1:], stdout, stderr)
 	case "logout":
-		return runUnimplemented("auth logout", stderr)
+		return runAuthLogout(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "Unknown auth command: %s\n\n", args[0])
 		printAuthHelp(stderr)

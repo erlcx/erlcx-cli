@@ -50,6 +50,21 @@ The vehicle name comes from the folder that contains the images.
 
 ## First Time Setup
 
+Create a Roblox OAuth 2.0 app in Creator Dashboard and add this redirect URL:
+
+```txt
+http://localhost:53682/callback
+```
+
+Set your app credentials as environment variables. Do not pass these values as normal command flags.
+
+```powershell
+$env:ERLCX_ROBLOX_CLIENT_ID = "your-client-id"
+$env:ERLCX_ROBLOX_CLIENT_SECRET = "your-client-secret"
+$env:ERLCX_ROBLOX_REDIRECT_URI = "http://localhost:53682/callback"
+$env:ERLCX_ROBLOX_SCOPES = "openid profile asset:read asset:write"
+```
+
 Log in with Roblox:
 
 ```powershell

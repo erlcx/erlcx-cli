@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/erlcx/cli/internal/auth"
 )
 
 func TestRunPrintsHelpWithoutArgs(t *testing.T) {
@@ -56,23 +58,99 @@ func TestRunPrintsAuthHelp(t *testing.T) {
 	}
 }
 
-func TestRunRoutesAuthSubcommands(t *testing.T) {
-	for _, args := range [][]string{
-		{"auth", "login"},
-		{"auth", "status"},
-		{"auth", "logout"},
-	} {
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
+func TestRunAuthStatusReportsMissingLogin(t *testing.T) {
+	withAuthService(t, auth.Service{Store: &cliMemoryStore{}})
 
-		code := Run(args, &stdout, &stderr)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 
-		if code != 1 {
-			t.Fatalf("expected exit code 1 for %v, got %d", args, code)
-		}
-		if !strings.Contains(stderr.String(), strings.Join(args, " ")+" is not implemented yet.") {
-			t.Fatalf("expected routed unimplemented error for %v, got %q", args, stderr.String())
-		}
+	code := Run([]string{"auth", "status"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if !strings.Contains(stdout.String(), "Not logged in.") {
+		t.Fatalf("expected missing login status, got %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+}
+
+func TestRunAuthLogoutDeletesStoredCredential(t *testing.T) {
+	store := &cliMemoryStore{
+		credential: auth.StoredCredential{ClientID: "client", RefreshToken: "refresh"},
+		hasValue:   true,
+	}
+	withAuthService(t, auth.Service{Store: store})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"auth", "logout"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if store.hasValue {
+		t.Fatal("expected logout to delete credential")
+	}
+	if !strings.Contains(stdout.String(), "Logged out.") {
+		t.Fatalf("expected logout output, got %q", stdout.String())
+	}
+}
+
+func TestRunAuthLoginRequiresClientID(t *testing.T) {
+	withAuthService(t, auth.Service{Store: &cliMemoryStore{}})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"auth", "login"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "client ID") {
+		t.Fatalf("expected client ID error, got %q", stderr.String())
+	}
+}
+
+func TestRunAuthLoginLoadsClientIDFromDotEnv(t *testing.T) {
+	workingDir := t.TempDir()
+	previousDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working dir: %v", err)
+	}
+	if err := os.Chdir(workingDir); err != nil {
+		t.Fatalf("change working dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousDir)
+	})
+
+	writeFile(t, filepath.Join(workingDir, ".env"), "ERLCX_ROBLOX_CLIENT_ID=from-dotenv\n")
+	t.Setenv(authClientIDEnv, "")
+	_ = os.Unsetenv(authClientIDEnv)
+
+	service := auth.Service{
+		Store: &cliMemoryStore{},
+		OpenBrowser: func(string) error {
+			return nil
+		},
+	}
+	withAuthService(t, service)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"auth", "login"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected login to progress past missing client ID and fail later, got code %d", code)
+	}
+	if strings.Contains(stderr.String(), "client ID") {
+		t.Fatalf("expected .env client ID to be loaded, got %q", stderr.String())
 	}
 }
 
@@ -235,4 +313,42 @@ func TestRunReturnsErrorForUnknownSubcommands(t *testing.T) {
 			t.Fatalf("expected unknown subcommand error for %v, got %q", args, stderr.String())
 		}
 	}
+}
+
+type cliMemoryStore struct {
+	credential auth.StoredCredential
+	hasValue   bool
+}
+
+func (store *cliMemoryStore) Save(credential auth.StoredCredential) error {
+	store.credential = credential
+	store.hasValue = true
+	return nil
+}
+
+func (store *cliMemoryStore) Load() (auth.StoredCredential, error) {
+	if !store.hasValue {
+		return auth.StoredCredential{}, auth.ErrNotLoggedIn
+	}
+	return store.credential, nil
+}
+
+func (store *cliMemoryStore) Delete() error {
+	if !store.hasValue {
+		return auth.ErrNotLoggedIn
+	}
+	store.hasValue = false
+	return nil
+}
+
+func withAuthService(t *testing.T, service auth.Service) {
+	t.Helper()
+
+	previous := newAuthService
+	newAuthService = func() auth.Service {
+		return service
+	}
+	t.Cleanup(func() {
+		newAuthService = previous
+	})
 }
