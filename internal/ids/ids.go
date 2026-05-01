@@ -2,6 +2,7 @@ package ids
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -13,6 +14,7 @@ type outputEntry struct {
 	VehiclePath string
 	VehicleName string
 	ImageName   string
+	FileName    string
 	RelPath     string
 	AssetID     string
 }
@@ -32,6 +34,7 @@ func Generate(lock lockfile.LockFile) (string, error) {
 			VehiclePath: derived.VehiclePath,
 			VehicleName: derived.VehicleName,
 			ImageName:   derived.ImageName,
+			FileName:    path.Base(relPath),
 			RelPath:     relPath,
 			AssetID:     entry.AssetID,
 		})
@@ -47,6 +50,8 @@ func Generate(lock lockfile.LockFile) (string, error) {
 		return strings.ToLower(entries[i].RelPath) < strings.ToLower(entries[j].RelPath)
 	})
 
+	duplicateNames := duplicateImageNamesByVehicle(entries)
+
 	var b strings.Builder
 	currentVehiclePath := ""
 	for i, entry := range entries {
@@ -59,8 +64,34 @@ func Generate(lock lockfile.LockFile) (string, error) {
 			currentVehiclePath = entry.VehiclePath
 		}
 
-		fmt.Fprintf(&b, "%s: %s\n", entry.ImageName, entry.AssetID)
+		fmt.Fprintf(&b, "%s: %s\n", entry.OutputName(duplicateNames), entry.AssetID)
 	}
 
 	return b.String(), nil
+}
+
+func duplicateImageNamesByVehicle(entries []outputEntry) map[string]bool {
+	counts := map[string]int{}
+	for _, entry := range entries {
+		counts[duplicateKey(entry)]++
+	}
+
+	duplicates := map[string]bool{}
+	for key, count := range counts {
+		if count > 1 {
+			duplicates[key] = true
+		}
+	}
+	return duplicates
+}
+
+func duplicateKey(entry outputEntry) string {
+	return strings.ToLower(entry.VehiclePath) + "\x00" + strings.ToLower(entry.ImageName)
+}
+
+func (entry outputEntry) OutputName(duplicateNames map[string]bool) string {
+	if duplicateNames[duplicateKey(entry)] {
+		return entry.FileName
+	}
+	return entry.ImageName
 }

@@ -42,6 +42,54 @@ func TestGenerateWritesDeterministicIDsText(t *testing.T) {
 	}
 }
 
+func TestGenerateDisambiguatesDuplicateImageNamesInsideVehicle(t *testing.T) {
+	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeUser, ID: "123456"})
+	lock.Files["Vehicle/Left.png"] = entry("100")
+	lock.Files["Vehicle/Left.jpg"] = entry("200")
+	lock.Files["Vehicle/Right.png"] = entry("300")
+
+	got, err := Generate(lock)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	want := strings.Join([]string{
+		"Vehicle",
+		"Left.jpg: 200",
+		"Left.png: 100",
+		"Right: 300",
+		"",
+	}, "\n")
+	if got != want {
+		t.Fatalf("expected IDs text:\n%q\ngot:\n%q", want, got)
+	}
+}
+
+func TestGenerateOnlyDisambiguatesDuplicatesWithinSameVehicle(t *testing.T) {
+	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeUser, ID: "123456"})
+	lock.Files["Emergency/Falcon/Left.png"] = entry("100")
+	lock.Files["Civilian/Falcon/Left.jpg"] = entry("200")
+
+	got, err := Generate(lock)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	want := strings.Join([]string{
+		"Falcon",
+		"Left: 200",
+		"",
+		"Falcon",
+		"Left: 100",
+		"",
+	}, "\n")
+	if got != want {
+		t.Fatalf("expected IDs text:\n%q\ngot:\n%q", want, got)
+	}
+}
+
 func TestGenerateRejectsInvalidLockFile(t *testing.T) {
 	_, err := Generate(lockfile.LockFile{})
 
