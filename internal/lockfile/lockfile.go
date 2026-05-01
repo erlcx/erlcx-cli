@@ -14,6 +14,7 @@ const CurrentVersion = 1
 
 const (
 	AssetTypeDecal = "Decal"
+	AssetTypeImage = "Image"
 
 	CreatorTypeUser  = "user"
 	CreatorTypeGroup = "group"
@@ -162,8 +163,10 @@ func ValidateEntry(entry Entry) error {
 	if !isSHA256(entry.SHA256) {
 		return errors.New("sha256 must be a 64-character lowercase hex string")
 	}
-	if entry.AssetType != AssetTypeDecal {
-		return fmt.Errorf("assetType must be %q", AssetTypeDecal)
+	switch entry.AssetType {
+	case AssetTypeImage, AssetTypeDecal:
+	default:
+		return fmt.Errorf("assetType must be %q or %q", AssetTypeImage, AssetTypeDecal)
 	}
 	if entry.AssetID == "" {
 		return errors.New("assetId must not be empty")

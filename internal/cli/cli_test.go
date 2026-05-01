@@ -281,6 +281,9 @@ func TestRunUploadUploadsAndWritesLockAndIDs(t *testing.T) {
 	if entry.AssetID != "2205400862" {
 		t.Fatalf("expected asset ID, got %q", entry.AssetID)
 	}
+	if entry.AssetType != lockfile.AssetTypeImage {
+		t.Fatalf("expected image asset type, got %q", entry.AssetType)
+	}
 
 	idsData, err := os.ReadFile(filepath.Join(packDir, "IDs.txt"))
 	if err != nil {
@@ -627,7 +630,7 @@ func readLockFile(t *testing.T, path string) lockfile.LockFile {
 func testLockEntry(assetID string) lockfile.Entry {
 	return lockfile.Entry{
 		SHA256:      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		AssetType:   lockfile.AssetTypeDecal,
+		AssetType:   lockfile.AssetTypeImage,
 		AssetID:     assetID,
 		DisplayName: "Vehicle - Left",
 		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),

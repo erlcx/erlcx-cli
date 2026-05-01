@@ -185,6 +185,8 @@ func buildCreateAssetPayload(upload AssetUploadRequest) (createAssetPayload, err
 
 func robloxAssetType(assetType string) (string, error) {
 	switch assetType {
+	case "Image", "ASSET_TYPE_IMAGE":
+		return "Image", nil
 	case "Decal", "ASSET_TYPE_DECAL":
 		return "Decal", nil
 	default:

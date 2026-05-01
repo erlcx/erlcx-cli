@@ -9,7 +9,7 @@ More ERLCX marketplace features may be added to this CLI later.
 ## What It Does
 
 - Uploads multiple livery images to Roblox.
-- Gets the Roblox decal ID for each uploaded image.
+- Gets the Roblox image/texture ID for each uploaded image.
 - Creates or updates an `IDs.txt` file.
 - Skips images that did not change since the last upload.
 - Can skip raw template images when you provide a templates folder.
@@ -108,7 +108,7 @@ The tool will:
 1. Scan the pack.
 2. Skip unchanged images.
 3. Upload new or changed images.
-4. Save the Roblox decal IDs.
+4. Save the Roblox image/texture IDs.
 5. Write `IDs.txt`.
 
 ## Dry Run

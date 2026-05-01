@@ -152,7 +152,7 @@ func TestValidateEntryRejectsInvalidEntry(t *testing.T) {
 		},
 		{
 			name:    "bad asset type",
-			entry:   withValidEntry(func(entry *Entry) { entry.AssetType = "Image" }),
+			entry:   withValidEntry(func(entry *Entry) { entry.AssetType = "Mesh" }),
 			message: "assetType",
 		},
 		{
@@ -189,18 +189,18 @@ func TestValidateEntryRejectsInvalidEntry(t *testing.T) {
 func TestEntryMatchesContent(t *testing.T) {
 	entry := validEntry()
 
-	if !entry.MatchesContent(validSHA256, AssetTypeDecal) {
+	if !entry.MatchesContent(validSHA256, AssetTypeImage) {
 		t.Fatal("expected entry to match same content and asset type")
 	}
-	if entry.MatchesContent(strings.Repeat("0", 64), AssetTypeDecal) {
+	if entry.MatchesContent(strings.Repeat("0", 64), AssetTypeImage) {
 		t.Fatal("expected different hash not to match")
 	}
-	if entry.MatchesContent(validSHA256, "Image") {
+	if entry.MatchesContent(validSHA256, AssetTypeDecal) {
 		t.Fatal("expected different asset type not to match")
 	}
 
 	entry.AssetID = ""
-	if entry.MatchesContent(validSHA256, AssetTypeDecal) {
+	if entry.MatchesContent(validSHA256, AssetTypeImage) {
 		t.Fatal("expected missing asset ID not to match")
 	}
 }
@@ -328,7 +328,7 @@ func validLockFile() LockFile {
 func validEntry() Entry {
 	return Entry{
 		SHA256:      validSHA256,
-		AssetType:   AssetTypeDecal,
+		AssetType:   AssetTypeImage,
 		AssetID:     "2205400862",
 		DisplayName: "Falcon Stallion 350 2015 - Left",
 		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),

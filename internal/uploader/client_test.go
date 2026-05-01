@@ -20,7 +20,7 @@ func TestNewCreateAssetRequestBuildsMultipartRobloxRequest(t *testing.T) {
 	req, err := client.NewCreateAssetRequest(context.Background(), "token", AssetUploadRequest{
 		FilePath:    filePath,
 		DisplayName: "Vehicle - Left",
-		AssetType:   "Decal",
+		AssetType:   "Image",
 		Creator:     Creator{Type: "group", ID: "123456"},
 	})
 
@@ -47,8 +47,8 @@ func TestNewCreateAssetRequestBuildsMultipartRobloxRequest(t *testing.T) {
 	if err := json.Unmarshal([]byte(parts["request"]), &payload); err != nil {
 		t.Fatalf("decode request payload: %v", err)
 	}
-	if payload.AssetType != "Decal" {
-		t.Fatalf("expected decal asset type, got %q", payload.AssetType)
+	if payload.AssetType != "Image" {
+		t.Fatalf("expected image asset type, got %q", payload.AssetType)
 	}
 	if payload.DisplayName != "Vehicle - Left" {
 		t.Fatalf("expected display name, got %q", payload.DisplayName)
@@ -68,7 +68,7 @@ func TestNewCreateAssetRequestTruncatesLongDisplayNameForRoblox(t *testing.T) {
 	req, err := client.NewCreateAssetRequest(context.Background(), "token", AssetUploadRequest{
 		FilePath:    filePath,
 		DisplayName: "Bullhorn Prancer Pursuit 2015 - CS_LST_Charger15_Back1",
-		AssetType:   "Decal",
+		AssetType:   "Image",
 		Creator:     Creator{Type: "group", ID: "123456"},
 	})
 
@@ -100,7 +100,7 @@ func TestNewCreateAssetRequestRejectsUnsupportedUploadImageType(t *testing.T) {
 	_, err := client.NewCreateAssetRequest(context.Background(), "token", AssetUploadRequest{
 		FilePath:    filePath,
 		DisplayName: "Vehicle - Left",
-		AssetType:   "Decal",
+		AssetType:   "Image",
 		Creator:     Creator{Type: "user", ID: "123"},
 	})
 
@@ -128,7 +128,7 @@ func TestCreateAssetParsesOperation(t *testing.T) {
 	operation, err := (Client{BaseURL: server.URL}).CreateAsset(context.Background(), "token", AssetUploadRequest{
 		FilePath:    filePath,
 		DisplayName: "Vehicle - Left",
-		AssetType:   "Decal",
+		AssetType:   "Image",
 		Creator:     Creator{Type: "user", ID: "123"},
 	})
 

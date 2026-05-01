@@ -204,7 +204,7 @@ func recordUploadResult(output io.Writer, style styler, opts fileCommandOptions,
 	item := plan.Items[result.Job.Index]
 	lock.Files[item.Image.RelPath] = lockfile.Entry{
 		SHA256:      item.Image.SHA256,
-		AssetType:   lockfile.AssetTypeDecal,
+		AssetType:   opts.Config.AssetType,
 		AssetID:     result.Asset.AssetID,
 		DisplayName: item.DisplayName,
 		UploadedAt:  uploadedAt,

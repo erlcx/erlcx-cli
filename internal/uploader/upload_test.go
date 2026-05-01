@@ -21,7 +21,7 @@ func TestUploadAssetCreatesPollsAndReturnsAsset(t *testing.T) {
 	_, asset, err := (Client{BaseURL: server.URL}).UploadAsset(context.Background(), "token", AssetUploadRequest{
 		FilePath:    filePath,
 		DisplayName: "Vehicle - Left",
-		AssetType:   "Decal",
+		AssetType:   "Image",
 		Creator:     Creator{Type: "user", ID: "123"},
 	}, PollOptions{Interval: time.Millisecond, Timeout: time.Second})
 
@@ -255,7 +255,7 @@ func uploadJobs(t *testing.T, count int) []Job {
 			Request: AssetUploadRequest{
 				FilePath:    writeUploadFile(t, "Side"+strconv.Itoa(i)+".png", []byte("image")),
 				DisplayName: "Vehicle - Side" + strconv.Itoa(i),
-				AssetType:   "Decal",
+				AssetType:   "Image",
 				Creator:     Creator{Type: "user", ID: "123"},
 			},
 		})

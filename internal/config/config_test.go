@@ -36,7 +36,7 @@ func TestLoadFileMergesWithDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if cfg.AssetType != AssetTypeDecal {
+	if cfg.AssetType != AssetTypeImage {
 		t.Fatalf("expected default asset type, got %q", cfg.AssetType)
 	}
 	if cfg.Creator.Type != CreatorTypeUser {
@@ -79,7 +79,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	}{
 		{
 			name:    "unsupported asset type",
-			json:    `{"assetType":"Image"}`,
+			json:    `{"assetType":"Mesh"}`,
 			message: "assetType",
 		},
 		{

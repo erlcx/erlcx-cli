@@ -25,7 +25,7 @@ func TestBuildScanPlanClassifiesImages(t *testing.T) {
 	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeGroup, ID: "123456"})
 	lock.Files["Vehicle/unchanged.png"] = lockfile.Entry{
 		SHA256:      unchangedHash,
-		AssetType:   lockfile.AssetTypeDecal,
+		AssetType:   lockfile.AssetTypeImage,
 		AssetID:     "999",
 		DisplayName: "Vehicle - unchanged",
 		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),
@@ -130,7 +130,7 @@ func TestBuildScanPlanDoesNotUseLockForDifferentCreator(t *testing.T) {
 	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeGroup, ID: "123456"})
 	lock.Files["Vehicle/Left.png"] = lockfile.Entry{
 		SHA256:      hashFileForTest(t, imagePath),
-		AssetType:   lockfile.AssetTypeDecal,
+		AssetType:   lockfile.AssetTypeImage,
 		AssetID:     "999",
 		DisplayName: "Vehicle - Left",
 		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),
@@ -155,7 +155,7 @@ func TestBuildScanPlanForCreatorUsesResolvedUserCreator(t *testing.T) {
 	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeUser, ID: "456"})
 	lock.Files["Vehicle/Left.png"] = lockfile.Entry{
 		SHA256:      hashFileForTest(t, imagePath),
-		AssetType:   lockfile.AssetTypeDecal,
+		AssetType:   lockfile.AssetTypeImage,
 		AssetID:     "999",
 		DisplayName: "Vehicle - Left",
 		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),
@@ -182,7 +182,7 @@ func TestBuildScanPlanForCreatorDoesNotUseLockForDifferentResolvedUserCreator(t 
 	lock := lockfile.New(lockfile.Creator{Type: lockfile.CreatorTypeUser, ID: "456"})
 	lock.Files["Vehicle/Left.png"] = lockfile.Entry{
 		SHA256:      hashFileForTest(t, imagePath),
-		AssetType:   lockfile.AssetTypeDecal,
+		AssetType:   lockfile.AssetTypeImage,
 		AssetID:     "999",
 		DisplayName: "Vehicle - Left",
 		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),

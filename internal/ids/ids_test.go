@@ -112,7 +112,7 @@ func TestGenerateRejectsEntryWithoutVehicleFolder(t *testing.T) {
 func entry(assetID string) lockfile.Entry {
 	return lockfile.Entry{
 		SHA256:      validSHA256,
-		AssetType:   lockfile.AssetTypeDecal,
+		AssetType:   lockfile.AssetTypeImage,
 		AssetID:     assetID,
 		DisplayName: "display",
 		UploadedAt:  time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC),

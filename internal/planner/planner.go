@@ -135,7 +135,7 @@ func classifyImage(
 			return Item{
 				Image:     image,
 				Class:     ClassUnchanged,
-				Reason:    fmt.Sprintf("unchanged decal ID %s", entry.AssetID),
+				Reason:    fmt.Sprintf("unchanged asset ID %s", entry.AssetID),
 				LockEntry: &entry,
 			}
 		}

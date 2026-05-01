@@ -12,6 +12,7 @@ const FileName = ".erlcx-uploader.json"
 
 const (
 	AssetTypeDecal = "Decal"
+	AssetTypeImage = "Image"
 
 	CreatorTypeUser  = "user"
 	CreatorTypeGroup = "group"
@@ -34,7 +35,7 @@ type Creator struct {
 
 func Defaults() Config {
 	return Config{
-		AssetType: AssetTypeDecal,
+		AssetType: AssetTypeImage,
 		Creator: Creator{
 			Type: CreatorTypeUser,
 		},
@@ -83,8 +84,10 @@ func LoadFile(path string) (Config, error) {
 }
 
 func Validate(cfg Config) error {
-	if cfg.AssetType != AssetTypeDecal {
-		return fmt.Errorf("assetType must be %q", AssetTypeDecal)
+	switch cfg.AssetType {
+	case AssetTypeImage, AssetTypeDecal:
+	default:
+		return fmt.Errorf("assetType must be %q or %q", AssetTypeImage, AssetTypeDecal)
 	}
 
 	switch cfg.Creator.Type {
