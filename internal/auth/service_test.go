@@ -50,6 +50,7 @@ func TestStatusRefreshesAndRotatesRefreshToken(t *testing.T) {
 	store := &memoryStore{
 		credential: StoredCredential{
 			ClientID:     "client",
+			ClientSecret: "secret",
 			RefreshToken: "old-refresh",
 			UserID:       "123",
 			Username:     "user",
@@ -84,6 +85,7 @@ func TestAccessTokenRefreshesCredentialAndReturnsAccessToken(t *testing.T) {
 	store := &memoryStore{
 		credential: StoredCredential{
 			ClientID:     "client",
+			ClientSecret: "secret",
 			RefreshToken: "old-refresh",
 			UserID:       "123",
 			Username:     "user",
@@ -96,7 +98,7 @@ func TestAccessTokenRefreshesCredentialAndReturnsAccessToken(t *testing.T) {
 	token, err := (Service{
 		Store: store,
 		OAuth: OAuthClient{BaseURL: server.URL},
-	}).AccessToken(context.Background(), AccessTokenOptions{ClientSecret: "secret"})
+	}).AccessToken(context.Background(), AccessTokenOptions{})
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)

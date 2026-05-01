@@ -77,9 +77,7 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 
 	if !opts.DryRun {
 		var err error
-		token, err = newAuthService().AccessToken(ctx, auth.AccessTokenOptions{
-			ClientSecret: os.Getenv(authClientSecretEnv),
-		})
+		token, err = newAuthService().AccessToken(ctx, auth.AccessTokenOptions{})
 		if err != nil {
 			if errors.Is(err, auth.ErrNotLoggedIn) {
 				style.errorf(output, "upload failed: not logged in; run erlcx auth login")

@@ -62,6 +62,8 @@ func runAuth(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runAuthStatus(args[1:], stdout, stderr)
 	case "logout":
 		return runAuthLogout(args[1:], stdout, stderr)
+	case "clear-oauth-app":
+		return runAuthClearOAuthApp(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "Unknown auth command: %s\n\n", args[0])
 		printAuthHelp(stderr)
@@ -140,6 +142,8 @@ Commands:
   login       Log in with Roblox
   status      Show the current login status
   logout      Log out and remove stored credentials
+  clear-oauth-app
+              Remove the saved custom OAuth app and current login
 
 `, "\n"))
 }

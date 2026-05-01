@@ -12,6 +12,7 @@ var ErrNotLoggedIn = errors.New("not logged in")
 
 type StoredCredential struct {
 	ClientID     string   `json:"clientId"`
+	ClientSecret string   `json:"clientSecret,omitempty"`
 	RefreshToken string   `json:"refreshToken"`
 	UserID       string   `json:"userId"`
 	Username     string   `json:"username"`

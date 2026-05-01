@@ -30,6 +30,8 @@ Log in with Roblox:
 erlcx auth login
 ```
 
+Choose `Custom Roblox OAuth app` and paste your app's client ID and client secret when asked.
+
 Your browser will open a Roblox login/permission page. After you approve it, return to the command window.
 
 Check who is logged in:
@@ -42,6 +44,12 @@ Log out when needed:
 
 ```powershell
 erlcx auth logout
+```
+
+To remove the saved custom OAuth app from this PC:
+
+```powershell
+erlcx auth clear-oauth-app
 ```
 
 ## Preview Before Uploading
@@ -154,33 +162,8 @@ Example:
   "skipNamePatterns": [
     "*_raw.png",
     "*_reference.png"
-  ],
-  "concurrency": 4,
-  "creator": {
-    "type": "user"
-  }
+  ]
 }
-```
-
-Supported config fields:
-
-- `templatesDir`: folder containing raw templates to hash-match and skip.
-- `outputFile`: generated IDs file path. Defaults to `IDs.txt`.
-- `lockFile`: upload lock path. Defaults to `.erlcx-upload.lock.json`.
-- `skipNamePatterns`: opt-in filename patterns to skip.
-- `concurrency`: number of parallel uploads. Defaults to `4`.
-- `assetType`: Roblox asset type. Defaults to `Image`.
-- `creator`: use `{"type":"user"}` or `{"type":"group","groupId":123456}`.
-
-Command-line flags override config values for that run.
-
-Useful upload flags:
-
-```powershell
-erlcx upload "D:\Designs\Sheriff Pack" --output "CustomIDs.txt"
-erlcx upload "D:\Designs\Sheriff Pack" --lock-file ".erlcx-upload.lock.json"
-erlcx upload "D:\Designs\Sheriff Pack" --skip-name "*_raw.png"
-erlcx upload "D:\Designs\Sheriff Pack" --concurrency 2
 ```
 
 ## License

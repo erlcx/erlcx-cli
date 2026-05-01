@@ -106,8 +106,36 @@ func TestRunAuthLogoutDeletesStoredCredential(t *testing.T) {
 	}
 }
 
+func TestRunAuthClearOAuthAppDeletesStoredCredential(t *testing.T) {
+	store := &cliMemoryStore{
+		credential: auth.StoredCredential{
+			ClientID:     "client",
+			ClientSecret: "secret",
+			RefreshToken: "refresh",
+		},
+		hasValue: true,
+	}
+	withAuthService(t, auth.Service{Store: store})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"auth", "clear-oauth-app"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if store.hasValue {
+		t.Fatal("expected stored OAuth app to be deleted")
+	}
+	if !strings.Contains(stdout.String(), "Cleared saved OAuth app") {
+		t.Fatalf("expected clear output, got %q", stdout.String())
+	}
+}
+
 func TestRunAuthLoginRequiresClientID(t *testing.T) {
 	withAuthService(t, auth.Service{Store: &cliMemoryStore{}})
+	withAuthPromptInput(t, "\n\n")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -122,23 +150,7 @@ func TestRunAuthLoginRequiresClientID(t *testing.T) {
 	}
 }
 
-func TestRunAuthLoginLoadsClientIDFromDotEnv(t *testing.T) {
-	workingDir := t.TempDir()
-	previousDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working dir: %v", err)
-	}
-	if err := os.Chdir(workingDir); err != nil {
-		t.Fatalf("change working dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(previousDir)
-	})
-
-	writeFile(t, filepath.Join(workingDir, ".env"), "ERLCX_ROBLOX_CLIENT_ID=from-dotenv\n")
-	t.Setenv(authClientIDEnv, "")
-	_ = os.Unsetenv(authClientIDEnv)
-
+func TestRunAuthLoginPromptsForCustomOAuthApp(t *testing.T) {
 	service := auth.Service{
 		Store: &cliMemoryStore{},
 		OpenBrowser: func(string) error {
@@ -147,6 +159,7 @@ func TestRunAuthLoginLoadsClientIDFromDotEnv(t *testing.T) {
 		CallbackTimeout: time.Millisecond,
 	}
 	withAuthService(t, service)
+	withAuthPromptInput(t, "1\nclient\nsecret\n")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -154,10 +167,30 @@ func TestRunAuthLoginLoadsClientIDFromDotEnv(t *testing.T) {
 	code := Run([]string{"auth", "login"}, &stdout, &stderr)
 
 	if code != 1 {
-		t.Fatalf("expected login to progress past missing client ID and fail later, got code %d", code)
+		t.Fatalf("expected login to progress to OAuth callback and fail later, got code %d", code)
 	}
 	if strings.Contains(stderr.String(), "client ID") {
-		t.Fatalf("expected .env client ID to be loaded, got %q", stderr.String())
+		t.Fatalf("expected prompted client ID to be used, got %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Custom Roblox OAuth app") {
+		t.Fatalf("expected login choices, got %q", stdout.String())
+	}
+}
+
+func TestRunAuthLoginReportsERLCXLoginUnavailable(t *testing.T) {
+	withAuthService(t, auth.Service{Store: &cliMemoryStore{}})
+	withAuthPromptInput(t, "2\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"auth", "login"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "not available yet") {
+		t.Fatalf("expected unavailable message, got %q", stderr.String())
 	}
 }
 
@@ -590,6 +623,16 @@ func withAuthService(t *testing.T, service auth.Service) {
 	}
 	t.Cleanup(func() {
 		newAuthService = previous
+	})
+}
+
+func withAuthPromptInput(t *testing.T, input string) {
+	t.Helper()
+
+	previous := authPromptInput
+	authPromptInput = strings.NewReader(input)
+	t.Cleanup(func() {
+		authPromptInput = previous
 	})
 }
 

@@ -109,6 +109,7 @@ func (service Service) Login(ctx context.Context, options LoginOptions) (Status,
 
 	credential := StoredCredential{
 		ClientID:     clientID,
+		ClientSecret: strings.TrimSpace(options.ClientSecret),
 		RefreshToken: tokens.RefreshToken,
 		UserID:       info.Subject,
 		Username:     info.PreferredName,
@@ -132,7 +133,7 @@ func (service Service) Status(ctx context.Context, options StatusOptions) (Statu
 	}
 
 	if options.Refresh {
-		tokens, err := service.oauth().Refresh(ctx, credential.ClientID, strings.TrimSpace(options.ClientSecret), credential.RefreshToken)
+		tokens, err := service.oauth().Refresh(ctx, credential.ClientID, credential.clientSecret(options.ClientSecret), credential.RefreshToken)
 		if err != nil {
 			return Status{}, err
 		}
@@ -157,7 +158,7 @@ func (service Service) AccessToken(ctx context.Context, options AccessTokenOptio
 		return AccessToken{}, err
 	}
 
-	tokens, err := service.oauth().Refresh(ctx, credential.ClientID, strings.TrimSpace(options.ClientSecret), credential.RefreshToken)
+	tokens, err := service.oauth().Refresh(ctx, credential.ClientID, credential.clientSecret(options.ClientSecret), credential.RefreshToken)
 	if err != nil {
 		return AccessToken{}, err
 	}
@@ -202,6 +203,13 @@ func (service Service) callbackTimeout() time.Duration {
 		return service.CallbackTimeout
 	}
 	return 5 * time.Minute
+}
+
+func (credential StoredCredential) clientSecret(override string) string {
+	if strings.TrimSpace(override) != "" {
+		return strings.TrimSpace(override)
+	}
+	return strings.TrimSpace(credential.ClientSecret)
 }
 
 func statusFromCredential(credential StoredCredential) Status {
