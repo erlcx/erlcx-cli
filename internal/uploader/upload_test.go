@@ -66,6 +66,57 @@ func TestUploadManyUsesBoundedConcurrency(t *testing.T) {
 	}
 }
 
+func TestUploadManyKeepsResultsInJobOrderWhenJobIndexesAreSparse(t *testing.T) {
+	server := newUploadTestServer(t, nil)
+	defer server.Close()
+
+	jobs := uploadJobs(t, 3)
+	jobs[0].Index = 10
+	jobs[1].Index = 20
+	jobs[2].Index = 30
+
+	results, err := (Client{BaseURL: server.URL}).UploadMany(context.Background(), "token", jobs, UploadOptions{
+		Concurrency: 2,
+		Poll:        PollOptions{Interval: time.Millisecond, Timeout: time.Second},
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(results) != len(jobs) {
+		t.Fatalf("expected %d results, got %d", len(jobs), len(results))
+	}
+	for i, result := range results {
+		if result.Job.Index != jobs[i].Index {
+			t.Fatalf("expected result %d to keep job index %d, got %d", i, jobs[i].Index, result.Job.Index)
+		}
+	}
+}
+
+func TestUploadManyCallsOnResultAsJobsFinish(t *testing.T) {
+	server := newUploadTestServer(t, nil)
+	defer server.Close()
+
+	var mu sync.Mutex
+	completed := 0
+	_, err := (Client{BaseURL: server.URL}).UploadMany(context.Background(), "token", uploadJobs(t, 3), UploadOptions{
+		Concurrency: 2,
+		Poll:        PollOptions{Interval: time.Millisecond, Timeout: time.Second},
+		OnResult: func(Result) {
+			mu.Lock()
+			defer mu.Unlock()
+			completed++
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if completed != 3 {
+		t.Fatalf("expected 3 completed callbacks, got %d", completed)
+	}
+}
+
 func TestUploadManyContinuesWhenFailFastDisabled(t *testing.T) {
 	server := uploadServerWithFailure(t, "1")
 	defer server.Close()

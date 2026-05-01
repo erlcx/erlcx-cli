@@ -3,13 +3,13 @@ package uploader
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 )
 
 type Job struct {
-	Index   int
-	Request AssetUploadRequest
+	Index       int
+	Request     AssetUploadRequest
+	resultIndex int
 }
 
 type Result struct {
@@ -23,6 +23,7 @@ type UploadOptions struct {
 	Concurrency int
 	FailFast    bool
 	Poll        PollOptions
+	OnResult    func(Result)
 }
 
 func (client Client) UploadAsset(ctx context.Context, accessToken string, upload AssetUploadRequest, poll PollOptions) (Operation, Asset, error) {
@@ -84,7 +85,10 @@ func (client Client) UploadMany(ctx context.Context, accessToken string, jobs []
 				result.Operation = operation
 				result.Asset = asset
 				result.Err = err
-				results[job.Index] = result
+				results[job.resultIndex] = result
+				if options.OnResult != nil {
+					options.OnResult(result)
+				}
 				recordErr(err)
 			}
 		}()
@@ -92,13 +96,9 @@ func (client Client) UploadMany(ctx context.Context, accessToken string, jobs []
 
 feed:
 	for i, job := range jobs {
+		job.resultIndex = i
 		if job.Index < 0 {
 			job.Index = i
-		}
-		if job.Index >= len(jobs) {
-			close(jobCh)
-			wg.Wait()
-			return results, fmt.Errorf("job index %d is outside result range", job.Index)
 		}
 		select {
 		case <-ctx.Done():

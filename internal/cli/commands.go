@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/erlcx/cli/internal/auth"
@@ -148,6 +149,8 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 	}
 
 	jobs := uploadJobsFromPlan(plan, opts.Config, targetCreator)
+	now := time.Now().UTC()
+	var uploadMu sync.Mutex
 	results, uploadErr := newUploaderClient().UploadMany(ctx, token.Token, jobs, uploader.UploadOptions{
 		Concurrency: opts.Config.Concurrency,
 		FailFast:    opts.FailFast,
@@ -155,27 +158,13 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 			Interval: 2 * time.Second,
 			Timeout:  5 * time.Minute,
 		},
+		OnResult: func(result uploader.Result) {
+			uploadMu.Lock()
+			defer uploadMu.Unlock()
+			recordUploadResult(output, style, opts, plan, &lock, now, result)
+		},
 	})
-
-	now := time.Now().UTC()
-	for _, result := range results {
-		if result.Job.Request.DisplayName == "" {
-			continue
-		}
-		if result.Err != nil {
-			fmt.Fprintf(output, "%s %s  %v\n", style.red("x failed"), result.Job.Request.DisplayName, result.Err)
-			continue
-		}
-		item := plan.Items[result.Job.Index]
-		lock.Files[item.Image.RelPath] = lockfile.Entry{
-			SHA256:      item.Image.SHA256,
-			AssetType:   lockfile.AssetTypeDecal,
-			AssetID:     result.Asset.AssetID,
-			DisplayName: item.DisplayName,
-			UploadedAt:  now,
-		}
-		fmt.Fprintf(output, "%s %s  %s\n", style.green("+ uploaded"), item.DisplayName, style.cyan(result.Asset.AssetID))
-	}
+	_ = results
 
 	finalExitCode := 0
 	if uploadErr != nil && opts.FailFast {
@@ -198,6 +187,29 @@ func runUpload(opts fileCommandOptions, output io.Writer) int {
 	fmt.Fprintf(output, "%s %s\n", style.green("updated:"), lockPath)
 	fmt.Fprintf(output, "%s %s\n", style.green("updated:"), resolvePackPath(opts.PackDir, opts.Config.OutputFile))
 	return finalExitCode
+}
+
+func recordUploadResult(output io.Writer, style styler, opts fileCommandOptions, plan planner.Plan, lock *lockfile.LockFile, uploadedAt time.Time, result uploader.Result) {
+	if result.Job.Request.DisplayName == "" {
+		return
+	}
+	if result.Err != nil {
+		if opts.FailFast && errors.Is(result.Err, context.Canceled) {
+			return
+		}
+		fmt.Fprintf(output, "%s %s  %v\n", style.red("x failed"), result.Job.Request.DisplayName, result.Err)
+		return
+	}
+
+	item := plan.Items[result.Job.Index]
+	lock.Files[item.Image.RelPath] = lockfile.Entry{
+		SHA256:      item.Image.SHA256,
+		AssetType:   lockfile.AssetTypeDecal,
+		AssetID:     result.Asset.AssetID,
+		DisplayName: item.DisplayName,
+		UploadedAt:  uploadedAt,
+	}
+	fmt.Fprintf(output, "%s %s  %s\n", style.green("+ uploaded"), item.DisplayName, style.cyan(result.Asset.AssetID))
 }
 
 func runIDs(opts fileCommandOptions, output io.Writer) int {

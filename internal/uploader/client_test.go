@@ -47,7 +47,7 @@ func TestNewCreateAssetRequestBuildsMultipartRobloxRequest(t *testing.T) {
 	if err := json.Unmarshal([]byte(parts["request"]), &payload); err != nil {
 		t.Fatalf("decode request payload: %v", err)
 	}
-	if payload.AssetType != "ASSET_TYPE_DECAL" {
+	if payload.AssetType != "Decal" {
 		t.Fatalf("expected decal asset type, got %q", payload.AssetType)
 	}
 	if payload.DisplayName != "Vehicle - Left" {
@@ -58,6 +58,38 @@ func TestNewCreateAssetRequestBuildsMultipartRobloxRequest(t *testing.T) {
 	}
 	if parts["fileContent"] != "image" {
 		t.Fatalf("expected file content, got %q", parts["fileContent"])
+	}
+}
+
+func TestNewCreateAssetRequestTruncatesLongDisplayNameForRoblox(t *testing.T) {
+	filePath := writeUploadFile(t, "Left.png", []byte("image"))
+	client := Client{BaseURL: "https://example.test"}
+
+	req, err := client.NewCreateAssetRequest(context.Background(), "token", AssetUploadRequest{
+		FilePath:    filePath,
+		DisplayName: "Bullhorn Prancer Pursuit 2015 - CS_LST_Charger15_Back1",
+		AssetType:   "Decal",
+		Creator:     Creator{Type: "group", ID: "123456"},
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	reader, err := req.MultipartReader()
+	if err != nil {
+		t.Fatalf("read multipart body: %v", err)
+	}
+	parts := readMultipartParts(t, reader)
+	var payload createAssetPayload
+	if err := json.Unmarshal([]byte(parts["request"]), &payload); err != nil {
+		t.Fatalf("decode request payload: %v", err)
+	}
+	if len([]rune(payload.DisplayName)) > MaxAssetNameLength {
+		t.Fatalf("expected display name to be truncated, got %q", payload.DisplayName)
+	}
+	if payload.DisplayName != "Bullhorn Prancer Pursuit 2015 - CS_LST_Charger15_B" {
+		t.Fatalf("expected deterministic truncated name, got %q", payload.DisplayName)
 	}
 }
 

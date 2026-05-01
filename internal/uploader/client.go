@@ -19,6 +19,7 @@ import (
 const (
 	DefaultBaseURL     = "https://apis.roblox.com"
 	DefaultDescription = "Uploaded by ERLCX"
+	MaxAssetNameLength = 50
 )
 
 type Client struct {
@@ -144,6 +145,7 @@ func buildCreateAssetPayload(upload AssetUploadRequest) (createAssetPayload, err
 	if displayName == "" {
 		return createAssetPayload{}, fmt.Errorf("display name must not be empty")
 	}
+	displayName = truncateAssetName(displayName)
 
 	assetType, err := robloxAssetType(upload.AssetType)
 	if err != nil {
@@ -184,10 +186,19 @@ func buildCreateAssetPayload(upload AssetUploadRequest) (createAssetPayload, err
 func robloxAssetType(assetType string) (string, error) {
 	switch assetType {
 	case "Decal", "ASSET_TYPE_DECAL":
-		return "ASSET_TYPE_DECAL", nil
+		return "Decal", nil
 	default:
 		return "", fmt.Errorf("unsupported upload asset type %q", assetType)
 	}
+}
+
+func truncateAssetName(name string) string {
+	if len([]rune(name)) <= MaxAssetNameLength {
+		return name
+	}
+
+	runes := []rune(name)
+	return strings.TrimSpace(string(runes[:MaxAssetNameLength]))
 }
 
 func imageContentType(path string) (string, error) {
