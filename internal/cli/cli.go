@@ -89,11 +89,19 @@ func runLock(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runFileCommand(command string, args []string, stderr io.Writer) int {
-	if _, code := parseFileCommandOptions(command, args, stderr); code >= 0 {
+	opts, code := parseFileCommandOptions(command, args, stderr)
+	if code >= 0 {
 		return code
 	}
 
-	return runUnimplemented(command, stderr)
+	switch command {
+	case "scan":
+		return runScan(opts, stderr)
+	case "upload":
+		return runUpload(opts, stderr)
+	default:
+		return runUnimplemented(command, stderr)
+	}
 }
 
 func runUnimplemented(command string, stderr io.Writer) int {

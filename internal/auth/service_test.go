@@ -80,6 +80,35 @@ func TestStatusRefreshesAndRotatesRefreshToken(t *testing.T) {
 	}
 }
 
+func TestAccessTokenRefreshesCredentialAndReturnsAccessToken(t *testing.T) {
+	store := &memoryStore{
+		credential: StoredCredential{
+			ClientID:     "client",
+			RefreshToken: "old-refresh",
+			UserID:       "123",
+			Username:     "user",
+		},
+		hasValue: true,
+	}
+	server := fakeOAuthServer(t)
+	defer server.Close()
+
+	token, err := (Service{
+		Store: store,
+		OAuth: OAuthClient{BaseURL: server.URL},
+	}).AccessToken(context.Background(), AccessTokenOptions{ClientSecret: "secret"})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if token.Token != "new-access" {
+		t.Fatalf("expected access token, got %q", token.Token)
+	}
+	if token.Credential.RefreshToken != "new-refresh" {
+		t.Fatalf("expected rotated refresh token, got %q", token.Credential.RefreshToken)
+	}
+}
+
 func TestLogoutDeletesCredentialAndTreatsMissingAsSuccess(t *testing.T) {
 	store := &memoryStore{
 		credential: StoredCredential{ClientID: "client", RefreshToken: "refresh"},

@@ -10,9 +10,10 @@ import (
 )
 
 type fileCommandOptions struct {
-	PackDir string
-	Config  config.Config
-	DryRun  bool
+	PackDir  string
+	Config   config.Config
+	DryRun   bool
+	FailFast bool
 }
 
 func parseFileCommandOptions(command string, args []string, stderr io.Writer) (fileCommandOptions, int) {
@@ -26,6 +27,7 @@ func parseFileCommandOptions(command string, args []string, stderr io.Writer) (f
 	var groupID int64
 	var concurrency int
 	var dryRun bool
+	failFast := true
 	var showHelp bool
 
 	flags.BoolVar(&showHelp, "help", false, "show help")
@@ -38,6 +40,7 @@ func parseFileCommandOptions(command string, args []string, stderr io.Writer) (f
 
 	if command == "upload" {
 		flags.BoolVar(&dryRun, "dry-run", false, "preview without uploading")
+		flags.BoolVar(&failFast, "fail-fast", true, "stop after the first upload failure")
 	}
 
 	packDir, flagArgs, err := splitPackDirAndFlags(args)
@@ -92,9 +95,10 @@ func parseFileCommandOptions(command string, args []string, stderr io.Writer) (f
 	}
 
 	return fileCommandOptions{
-		PackDir: packDir,
-		Config:  cfg,
-		DryRun:  dryRun,
+		PackDir:  packDir,
+		Config:   cfg,
+		DryRun:   dryRun,
+		FailFast: failFast,
 	}, -1
 }
 
@@ -154,5 +158,6 @@ Options:
 
 	if command == "upload" {
 		fmt.Fprint(w, "  --dry-run             Preview without uploading\n")
+		fmt.Fprint(w, "  --fail-fast <bool>    Stop after the first upload failure (default true)\n")
 	}
 }

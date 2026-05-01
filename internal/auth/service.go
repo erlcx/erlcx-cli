@@ -27,6 +27,15 @@ type StatusOptions struct {
 	ClientSecret string
 }
 
+type AccessTokenOptions struct {
+	ClientSecret string
+}
+
+type AccessToken struct {
+	Token      string
+	Credential StoredCredential
+}
+
 type Status struct {
 	LoggedIn    bool
 	UserID      string
@@ -137,6 +146,33 @@ func (service Service) Status(ctx context.Context, options StatusOptions) (Statu
 	}
 
 	return statusFromCredential(credential), nil
+}
+
+func (service Service) AccessToken(ctx context.Context, options AccessTokenOptions) (AccessToken, error) {
+	credential, err := service.store().Load()
+	if err != nil {
+		if errors.Is(err, ErrNotLoggedIn) {
+			return AccessToken{}, ErrNotLoggedIn
+		}
+		return AccessToken{}, err
+	}
+
+	tokens, err := service.oauth().Refresh(ctx, credential.ClientID, strings.TrimSpace(options.ClientSecret), credential.RefreshToken)
+	if err != nil {
+		return AccessToken{}, err
+	}
+	credential.RefreshToken = tokens.RefreshToken
+	if tokens.Scope != "" {
+		credential.Scopes = tokens.Scope
+	}
+	if err := service.store().Save(credential); err != nil {
+		return AccessToken{}, err
+	}
+
+	return AccessToken{
+		Token:      tokens.AccessToken,
+		Credential: credential,
+	}, nil
 }
 
 func (service Service) Logout() error {

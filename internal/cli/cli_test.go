@@ -2,12 +2,17 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/erlcx/cli/internal/auth"
+	"github.com/erlcx/cli/internal/lockfile"
+	"github.com/erlcx/cli/internal/uploader"
 )
 
 func TestRunPrintsHelpWithoutArgs(t *testing.T) {
@@ -155,7 +160,7 @@ func TestRunAuthLoginLoadsClientIDFromDotEnv(t *testing.T) {
 }
 
 func TestRunRoutesTopLevelCommands(t *testing.T) {
-	for _, command := range []string{"scan", "upload", "ids"} {
+	for _, command := range []string{"ids"} {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
 		packDir := t.TempDir()
@@ -168,6 +173,102 @@ func TestRunRoutesTopLevelCommands(t *testing.T) {
 		if !strings.Contains(stderr.String(), command+" is not implemented yet.") {
 			t.Fatalf("expected routed unimplemented error for %s, got %q", command, stderr.String())
 		}
+	}
+}
+
+func TestRunScanPrintsCountsAndReasons(t *testing.T) {
+	withAuthService(t, auth.Service{Store: &cliMemoryStore{}})
+	packDir := t.TempDir()
+	writeFile(t, filepath.Join(packDir, "Vehicle", "Left.png"), "image")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"scan", packDir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d and output %q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Scanned 1 images") {
+		t.Fatalf("expected scan count, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "upload  Vehicle/Left.png") {
+		t.Fatalf("expected upload item, got %q", stderr.String())
+	}
+}
+
+func TestRunUploadDryRunUsesScanPlannerWithoutWritingFiles(t *testing.T) {
+	withAuthService(t, auth.Service{Store: &cliMemoryStore{}})
+	packDir := t.TempDir()
+	writeFile(t, filepath.Join(packDir, "Vehicle", "Left.png"), "image")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"upload", packDir, "--dry-run"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d and output %q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Dry run") {
+		t.Fatalf("expected dry-run output, got %q", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(packDir, ".erlcx-upload.lock.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected dry-run not to write lock file, stat err was %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(packDir, "IDs.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected dry-run not to write IDs file, stat err was %v", err)
+	}
+}
+
+func TestRunUploadUploadsAndWritesLockAndIDs(t *testing.T) {
+	store := &cliMemoryStore{
+		credential: auth.StoredCredential{
+			ClientID:     "client",
+			RefreshToken: "refresh",
+			UserID:       "123",
+			Username:     "tester",
+		},
+		hasValue: true,
+	}
+	oauthServer := cliOAuthServer(t)
+	defer oauthServer.Close()
+	uploadServer := cliUploadServer(t)
+	defer uploadServer.Close()
+
+	withAuthService(t, auth.Service{
+		Store: store,
+		OAuth: auth.OAuthClient{BaseURL: oauthServer.URL},
+	})
+	withUploaderClient(t, uploader.Client{BaseURL: uploadServer.URL})
+
+	packDir := t.TempDir()
+	writeFile(t, filepath.Join(packDir, "Vehicle", "Left.png"), "image")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"upload", packDir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d and output %q", code, stderr.String())
+	}
+
+	lock := readLockFile(t, filepath.Join(packDir, ".erlcx-upload.lock.json"))
+	entry, ok := lock.Files["Vehicle/Left.png"]
+	if !ok {
+		t.Fatalf("expected lock entry, got %#v", lock.Files)
+	}
+	if entry.AssetID != "2205400862" {
+		t.Fatalf("expected asset ID, got %q", entry.AssetID)
+	}
+
+	idsData, err := os.ReadFile(filepath.Join(packDir, "IDs.txt"))
+	if err != nil {
+		t.Fatalf("read IDs file: %v", err)
+	}
+	if !strings.Contains(string(idsData), "Left: 2205400862") {
+		t.Fatalf("expected IDs file to contain asset ID, got %q", string(idsData))
 	}
 }
 
@@ -351,4 +452,83 @@ func withAuthService(t *testing.T, service auth.Service) {
 	t.Cleanup(func() {
 		newAuthService = previous
 	})
+}
+
+func withUploaderClient(t *testing.T, client uploader.Client) {
+	t.Helper()
+
+	previous := newUploaderClient
+	newUploaderClient = func() uploader.Client {
+		return client
+	}
+	t.Cleanup(func() {
+		newUploaderClient = previous
+	})
+}
+
+func cliOAuthServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/token" {
+			t.Fatalf("expected token endpoint, got %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse token form: %v", err)
+		}
+		if r.Form.Get("grant_type") != "refresh_token" {
+			t.Fatalf("expected refresh grant, got %q", r.Form.Get("grant_type"))
+		}
+		writeJSONResponse(t, w, auth.TokenSet{
+			AccessToken:  "access",
+			RefreshToken: "rotated",
+			Scope:        "openid profile asset:read asset:write",
+		})
+	}))
+}
+
+func cliUploadServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/assets/v1/assets":
+			if r.Header.Get("Authorization") != "Bearer access" {
+				t.Fatalf("expected bearer access token, got %q", r.Header.Get("Authorization"))
+			}
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
+				t.Fatalf("parse upload multipart: %v", err)
+			}
+			writeJSONResponse(t, w, uploader.Operation{Path: "operations/op-1", OperationID: "op-1"})
+		case r.Method == http.MethodGet && r.URL.Path == "/assets/v1/operations/op-1":
+			writeJSONResponse(t, w, uploader.Operation{
+				Path: "operations/op-1",
+				Done: true,
+				Response: &uploader.Asset{
+					AssetID: "2205400862",
+				},
+			})
+		default:
+			t.Fatalf("unexpected upload request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+}
+
+func writeJSONResponse(t *testing.T, w http.ResponseWriter, value any) {
+	t.Helper()
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		t.Fatalf("write json response: %v", err)
+	}
+}
+
+func readLockFile(t *testing.T, path string) lockfile.LockFile {
+	t.Helper()
+
+	lock, err := lockfile.Load(path)
+	if err != nil {
+		t.Fatalf("load lock file: %v", err)
+	}
+	return lock
 }
