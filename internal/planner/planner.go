@@ -2,11 +2,11 @@ package planner
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 
 	"github.com/erlcx/cli/internal/config"
 	"github.com/erlcx/cli/internal/lockfile"
+	"github.com/erlcx/cli/internal/names"
 	"github.com/erlcx/cli/internal/scanner"
 )
 
@@ -85,15 +85,15 @@ func BuildScanPlanForCreator(packDir string, cfg config.Config, targetCreator lo
 	}
 
 	for _, image := range images {
-		names, err := deriveNames(image.RelPath)
+		derived, err := names.FromRelativePath(image.RelPath)
 		if err != nil {
 			return Plan{}, err
 		}
 		item := classifyImage(image, cfg, targetCreator, skipMatcher, templateIndex, hasTemplateIndex, existingLock)
-		item.VehiclePath = names.VehiclePath
-		item.VehicleName = names.VehicleName
-		item.ImageName = names.ImageName
-		item.DisplayName = names.DisplayName
+		item.VehiclePath = derived.VehiclePath
+		item.VehicleName = derived.VehicleName
+		item.ImageName = derived.ImageName
+		item.DisplayName = derived.DisplayName
 		plan.Items = append(plan.Items, item)
 		plan.Counts.add(item.Class)
 	}
@@ -146,39 +146,6 @@ func classifyImage(
 		Class:  ClassUpload,
 		Reason: "new or changed image",
 	}
-}
-
-type derivedNames struct {
-	VehiclePath string
-	VehicleName string
-	ImageName   string
-	DisplayName string
-}
-
-func deriveNames(relPath string) (derivedNames, error) {
-	relPath = scanner.CleanRelativePath(relPath)
-	if relPath == "" {
-		return derivedNames{}, fmt.Errorf("derive names: relative path must not be empty")
-	}
-
-	vehiclePath := path.Dir(relPath)
-	if vehiclePath == "." || vehiclePath == "" {
-		return derivedNames{}, fmt.Errorf("derive names for %s: image must be inside a vehicle folder", relPath)
-	}
-
-	fileName := path.Base(relPath)
-	imageName := fileName[:len(fileName)-len(path.Ext(fileName))]
-	if imageName == "" {
-		return derivedNames{}, fmt.Errorf("derive names for %s: image name must not be empty", relPath)
-	}
-
-	vehicleName := path.Base(vehiclePath)
-	return derivedNames{
-		VehiclePath: vehiclePath,
-		VehicleName: vehicleName,
-		ImageName:   imageName,
-		DisplayName: fmt.Sprintf("%s - %s", vehicleName, imageName),
-	}, nil
 }
 
 func (counts *Counts) add(class Classification) {
